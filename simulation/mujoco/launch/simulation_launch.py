@@ -7,7 +7,8 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    xml_file_name = "model/xml/spot_mini/spot_mini.xml"
+    # xml_file_name = "model/xml/spot_mini/spot_mini.xml"
+    xml_file_name = "model/xml/anymal_c/scene.xml"
     xml_file = os.path.join(get_package_share_path("description"), xml_file_name)
 
     return LaunchDescription(

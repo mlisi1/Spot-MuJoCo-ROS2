@@ -8,6 +8,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <mujoco_msgs/msg/mujoco_contacts.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -63,6 +64,9 @@ private:
   void actuator_cmd_callback(
       const communication::msg::ActuatorCmds::SharedPtr msg) const;
 
+  void trajectory_cmd_callback(
+      const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) const;
+
   void parameter_callback(const rclcpp::Parameter &);
 
   void drop_old_message();
@@ -83,6 +87,8 @@ private:
 
   rclcpp::Subscription<communication::msg::ActuatorCmds>::SharedPtr
       actuator_cmd_subscription_;
+  rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr
+      trajectory_cmd_subscription_;
   rclcpp::Service<communication::srv::SimulationReset>::SharedPtr reset_service_;
 
   std::shared_ptr<rclcpp::ParameterEventHandler> param_subscriber_;
