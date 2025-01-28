@@ -22,6 +22,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       name_prefix + "joint_states", qos);
   odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
       name_prefix + "odom", qos);
+  contacts_publisher_ = this->create_publisher<mujoco_msgs::msg::MujocoContacts>(
+      name_prefix + "contacts", qos);
   touch_publisher_ = this->create_publisher<communication::msg::TouchSensor>(
       name_prefix + "touch_sensor", qos);
   depth_img_publisher_ptr_ = this->create_publisher<sensor_msgs::msg::Image>(
@@ -39,6 +41,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       2ms, std::bind(&MuJoCoMessageHandler::touch_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
       20ms, std::bind(&MuJoCoMessageHandler::img_callback, this)));
+  timers_.emplace_back(this->create_wall_timer(
+      20ms, std::bind(&MuJoCoMessageHandler::contacts_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
       100ms, std::bind(&MuJoCoMessageHandler::drop_old_message, this)));
   /* timers_.emplace_back(this->create_wall_timer(
@@ -169,7 +173,7 @@ void MuJoCoMessageHandler::touch_callback() {
         message.value.emplace_back(
             sim_->d->sensordata[sim_->m->sensor_adr[idx]]);
       } else {
-        RCLCPP_WARN(this->get_logger(), "Request sensor %s does not exist",
+        RCLCPP_DEBUG(this->get_logger(), "Request sensor %s does not exist",
                     name.c_str());
       }
     }
@@ -256,6 +260,97 @@ void MuJoCoMessageHandler::actuator_cmd_callback(
       actuator_cmds_ptr_->torque[k] = msg->torque[k];
     }
     // RCLCPP_INFO(this->get_logger(), "subscribe actuator cmds");
+  }
+}
+
+
+
+void MuJoCoMessageHandler::contacts_callback() {
+  if (sim_->d != nullptr) {
+    auto message = mujoco_msgs::msg::MujocoContacts();
+    // message.header.frame_id = &sim_->m->names[0];
+    rclcpp::Time now = rclcpp::Clock().now();
+    message.header.stamp = now;
+    const std::lock_guard<std::mutex> lock(sim_->mtx);
+    mjData* data = sim_->d;
+    mjModel* model = sim_->m;
+    message.contacts.resize(1);
+
+    for (int i = 0; i < data->ncon; i++) {
+        const mjContact& contact = data->contact[i];
+        
+        if (contact.efc_address >= 0) {
+
+            message.contacts[0].header.stamp = now;
+            message.contacts[0].header.frame_id = "world";
+            message.contacts[0].position.x = contact.pos[0];
+            message.contacts[0].position.y = contact.pos[1];
+            message.contacts[0].position.z = contact.pos[2];
+
+            message.contacts[0].normal.x = contact.frame[0];
+            message.contacts[0].normal.y = contact.frame[1];
+            message.contacts[0].normal.z = contact.frame[2];
+
+
+            message.contacts[0].tangent1.x = contact.frame[3];
+            message.contacts[0].tangent1.y = contact.frame[4];
+            message.contacts[0].tangent1.z = contact.frame[5];
+
+            message.contacts[0].tangent2.x = contact.frame[6];
+            message.contacts[0].tangent2.y = contact.frame[7];
+            message.contacts[0].tangent2.z = contact.frame[8];
+
+            // Solver parameters
+            message.contacts[0].solref[0] = contact.solref[0];
+            message.contacts[0].solref[1] = contact.solref[1];
+            message.contacts[0].solimp[0] = contact.solimp[0];
+            message.contacts[0].solimp[1] = contact.solimp[1];
+
+            message.contacts[0].distance = contact.dist;
+
+            // Object IDs
+            message.contacts[0].object1_id = contact.geom1;
+            message.contacts[0].object2_id = contact.geom2;
+
+            // Contact dimension, exclude flag, and solver address
+            message.contacts[0].contact_dim = contact.dim;
+            message.contacts[0].exclude_flag = contact.exclude;
+            message.contacts[0].efc_address = contact.efc_address;
+
+            message.contacts[0].contact_force.force.x = data->efc_force[contact.efc_address + 2];
+            message.contacts[0].contact_force.force.y = data->efc_force[contact.efc_address + 1];
+            message.contacts[0].contact_force.force.z = data->efc_force[contact.efc_address];
+
+            message.contacts[0].contact_force.torque.x = data->efc_force[contact.efc_address + 5];
+            message.contacts[0].contact_force.torque.y = data->efc_force[contact.efc_address + 4];
+            message.contacts[0].contact_force.torque.z = data->efc_force[contact.efc_address + 3];
+
+            for (int j = 0; j < 5; ++j) {
+                message.contacts[0].friction[j] = contact.friction[j];
+            }
+
+            const char* geom1_name = (model->name_geomadr[contact.geom1] >= 0 && *(model->names + model->name_geomadr[contact.geom1]) != '\0') 
+                            ? model->names + model->name_geomadr[contact.geom1] 
+                            : "Unnamed";
+
+            const char* geom2_name = (model->name_geomadr[contact.geom2] >= 0 && *(model->names + model->name_geomadr[contact.geom2]) != '\0') 
+                            ? model->names + model->name_geomadr[contact.geom2] 
+                            : "Unnamed";
+
+
+            message.contacts[0].object1_name = geom1_name;
+            message.contacts[0].object2_name = geom2_name;
+
+
+            RCLCPP_INFO_STREAM(this->get_logger(), geom1_name << " " << geom2_name);
+
+       
+        } else {
+            std::cout << "Contact " << i << " not included in constraints.\n";
+        }
+    }
+
+    contacts_publisher_->publish(message);
   }
 }
 

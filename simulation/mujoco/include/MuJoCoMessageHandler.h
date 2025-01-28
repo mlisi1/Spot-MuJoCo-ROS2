@@ -7,6 +7,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <mujoco_msgs/msg/mujoco_contacts.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -57,6 +58,8 @@ private:
 
   void img_callback();
 
+  void contacts_callback();
+
   void actuator_cmd_callback(
       const communication::msg::ActuatorCmds::SharedPtr msg) const;
 
@@ -73,6 +76,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr
       joint_state_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
+  rclcpp::Publisher<mujoco_msgs::msg::MujocoContacts>::SharedPtr contacts_publisher_;
   rclcpp::Publisher<communication::msg::TouchSensor>::SharedPtr touch_publisher_;
   Publisher<sensor_msgs::msg::Image>::SharedPtr depth_img_publisher_ptr_;
   Publisher<sensor_msgs::msg::Image>::SharedPtr rgb_img_publisher_ptr_;
