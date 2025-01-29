@@ -98,6 +98,9 @@ private:
   std::shared_ptr<ActuatorCmds> actuator_cmds_ptr_;
 
   std::thread spin_thread;
+
+  std::string odometry_frame;
+
 };
 
 } // namespace deepbreak

@@ -15,6 +15,15 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       std::bind(&MuJoCoMessageHandler::reset_callback, this,
                 std::placeholders::_1, std::placeholders::_2));
 
+  auto imu_timer =      1ms * this->declare_parameter<double>("imu_timer", 2.5);  // ms
+  auto joint_timer =    1ms * this->declare_parameter<double>("joint_timer", 1.);  // ms
+  auto odom_timer =     1ms * this->declare_parameter<double>("odom_timer", 20.);  // ms
+  auto touch_timer =    1ms * this->declare_parameter<double>("touch_timer", 2.);  // ms
+  auto img_timer =      1ms * this->declare_parameter<double>("img_timer", 20.);  // ms
+  auto contacts_timer = 1ms * this->declare_parameter<double>("contacts_timer", 20.);  // ms
+
+  odometry_frame = this->declare_parameter<std::string>("odometry_frame", "base");
+
   auto qos = rclcpp::QoS(rclcpp::KeepLast(1), rmw_qos_profile_sensor_data);
   imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(
       name_prefix + "imu_data", qos);
@@ -32,17 +41,17 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       name_prefix + "rgb_image", qos);
 
   timers_.emplace_back(this->create_wall_timer(
-      2.5ms, std::bind(&MuJoCoMessageHandler::imu_callback, this)));
+      imu_timer, std::bind(&MuJoCoMessageHandler::imu_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
-      1ms, std::bind(&MuJoCoMessageHandler::joint_callback, this)));
+      joint_timer, std::bind(&MuJoCoMessageHandler::joint_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
-      20ms, std::bind(&MuJoCoMessageHandler::odom_callback, this)));
+      odom_timer, std::bind(&MuJoCoMessageHandler::odom_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
-      2ms, std::bind(&MuJoCoMessageHandler::touch_callback, this)));
+      touch_timer, std::bind(&MuJoCoMessageHandler::touch_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
-      20ms, std::bind(&MuJoCoMessageHandler::img_callback, this)));
+      img_timer, std::bind(&MuJoCoMessageHandler::img_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
-      20ms, std::bind(&MuJoCoMessageHandler::contacts_callback, this)));
+      contacts_timer, std::bind(&MuJoCoMessageHandler::contacts_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
       100ms, std::bind(&MuJoCoMessageHandler::drop_old_message, this)));
   /* timers_.emplace_back(this->create_wall_timer(
@@ -52,6 +61,12 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       this->create_subscription<communication::msg::ActuatorCmds>(
           name_prefix + "actuators_cmds", qos,
           std::bind(&MuJoCoMessageHandler::actuator_cmd_callback, this,
+                    std::placeholders::_1));
+
+  trajectory_cmd_subscription_ =
+      this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+          name_prefix + "joint_trajectory", qos,
+          std::bind(&MuJoCoMessageHandler::trajectory_cmd_callback, this,
                     std::placeholders::_1));
 
   param_subscriber_ = std::make_shared<rclcpp::ParameterEventHandler>(this);
@@ -184,16 +199,23 @@ void MuJoCoMessageHandler::touch_callback() {
 void MuJoCoMessageHandler::odom_callback() {
   const std::lock_guard<std::mutex> lock(sim_->mtx);
   if (sim_->d != nullptr) {
+
+    int body_index = mj_name2id(sim_->m, mjOBJ_BODY,  odometry_frame.c_str());
+    const double* pos = sim_->d->xpos + 3 * body_index;  
+    const double* qpos = sim_->d->xquat + 4 * body_index;
+
     auto message = nav_msgs::msg::Odometry();
-    message.header.frame_id = &sim_->m->names[0];
+    message.header.frame_id = "world";
+    message.child_frame_id = odometry_frame;
     message.header.stamp = rclcpp::Clock().now();
-    message.pose.pose.position.x = sim_->d->qpos[0];
-    message.pose.pose.position.y = sim_->d->qpos[1];
-    message.pose.pose.position.z = sim_->d->qpos[2];
-    message.pose.pose.orientation.w = sim_->d->qpos[3];
-    message.pose.pose.orientation.x = sim_->d->qpos[4];
-    message.pose.pose.orientation.y = sim_->d->qpos[5];
-    message.pose.pose.orientation.z = sim_->d->qpos[6];
+    message.pose.pose.position.x = pos[0];
+    message.pose.pose.position.y = pos[1];
+    message.pose.pose.position.z = pos[2];
+    message.pose.pose.orientation.w = qpos[0];
+    message.pose.pose.orientation.x = qpos[1];
+    message.pose.pose.orientation.y = qpos[2];
+    message.pose.pose.orientation.z = qpos[3];
+    //TODO: check if velocities are cartesian
     message.twist.twist.linear.x = sim_->d->qvel[0];
     message.twist.twist.linear.y = sim_->d->qvel[1];
     message.twist.twist.linear.z = sim_->d->qvel[2];
@@ -260,6 +282,44 @@ void MuJoCoMessageHandler::actuator_cmd_callback(
       actuator_cmds_ptr_->torque[k] = msg->torque[k];
     }
     // RCLCPP_INFO(this->get_logger(), "subscribe actuator cmds");
+  }
+}
+
+
+
+void MuJoCoMessageHandler::trajectory_cmd_callback(
+    const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) const {
+  if (sim_->d != nullptr) {
+    mjModel* model = sim_->m;
+    mjData* data = sim_->d;
+    for (size_t i = 0; i < msg->joint_names.size(); ++i) {
+        const std::string& joint_name = msg->joint_names[i];
+
+        // // Find the joint ID in the MuJoCo model
+        int joint_id = mj_name2id(model, mjOBJ_JOINT, joint_name.c_str());
+        if (joint_id == -1) {
+            RCLCPP_WARN(this->get_logger(), "Joint '%s' not found in MuJoCo model.", joint_name.c_str());
+            continue;
+        }
+
+        int actuator_id = mj_name2id(model, mjOBJ_ACTUATOR, joint_name.c_str());
+        if (actuator_id == -1) {
+            RCLCPP_WARN(this->get_logger(), "Actuator '%s' not found in MuJoCo model.", joint_name.c_str());
+            continue;
+        }
+
+        // Update joint position if available
+        if (!msg->points.empty() && !msg->points[0].positions.empty()) {
+            // data->qpos[model->jnt_qposadr[joint_id]] = msg->points[0].positions[i];
+            data->ctrl[actuator_id] = msg->points[0].positions[i];
+        }
+
+        // // Update joint velocity if available
+        // if (!msg->points.empty() && !msg->points[0].velocities.empty()) {
+        //     data_->qvel[model_->jnt_dofadr[joint_id]] = msg->points[0].velocities[i];
+        // }
+
+    }
   }
 }
 
@@ -340,13 +400,9 @@ void MuJoCoMessageHandler::contacts_callback() {
 
             message.contacts[0].object1_name = geom1_name;
             message.contacts[0].object2_name = geom2_name;
-
-
-            RCLCPP_INFO_STREAM(this->get_logger(), geom1_name << " " << geom2_name);
-
        
         } else {
-            std::cout << "Contact " << i << " not included in constraints.\n";
+            RCLCPP_WARN_STREAM(this->get_logger(), "Contact " << i << " not included in constraints.\n");
         }
     }
 
