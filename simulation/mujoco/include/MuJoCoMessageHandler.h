@@ -51,6 +51,8 @@ private:
 
   void imu_callback();
 
+  void sensor_odom_callback();
+
   void odom_callback();
 
   void touch_callback();
@@ -80,6 +82,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr
       joint_state_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr sensor_odom_publisher_;
   rclcpp::Publisher<mujoco_msgs::msg::MujocoContacts>::SharedPtr contacts_publisher_;
   rclcpp::Publisher<communication::msg::TouchSensor>::SharedPtr touch_publisher_;
   Publisher<sensor_msgs::msg::Image>::SharedPtr depth_img_publisher_ptr_;

@@ -15,12 +15,13 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       std::bind(&MuJoCoMessageHandler::reset_callback, this,
                 std::placeholders::_1, std::placeholders::_2));
 
-  auto imu_timer =      1ms * this->declare_parameter<double>("imu_timer", 2.5);  // ms
-  auto joint_timer =    1ms * this->declare_parameter<double>("joint_timer", 1.);  // ms
-  auto odom_timer =     1ms * this->declare_parameter<double>("odom_timer", 20.);  // ms
-  auto touch_timer =    1ms * this->declare_parameter<double>("touch_timer", 2.);  // ms
-  auto img_timer =      1ms * this->declare_parameter<double>("img_timer", 20.);  // ms
-  auto contacts_timer = 1ms * this->declare_parameter<double>("contacts_timer", 20.);  // ms
+  auto imu_timer =              1ms * this->declare_parameter<double>("imu_timer", 2.5);  // ms
+  auto joint_timer =            1ms * this->declare_parameter<double>("joint_timer", 1.);  // ms
+  auto odom_timer =             1ms * this->declare_parameter<double>("odom_timer", 20.);  // ms
+  auto sensor_odom_timer =      1ms * this->declare_parameter<double>("sensor_odom_timer", 1.);  // ms
+  auto touch_timer =            1ms * this->declare_parameter<double>("touch_timer", 2.);  // ms
+  auto img_timer =              1ms * this->declare_parameter<double>("img_timer", 20.);  // ms
+  auto contacts_timer =         1ms * this->declare_parameter<double>("contacts_timer", 1.);  // ms
 
   odometry_frame = this->declare_parameter<std::string>("odometry_frame", "base");
 
@@ -31,6 +32,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       name_prefix + "joint_states", qos);
   odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
       name_prefix + "odom", qos);
+  sensor_odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
+      name_prefix + "sensor_odom", qos);
   contacts_publisher_ = this->create_publisher<mujoco_msgs::msg::MujocoContacts>(
       name_prefix + "contacts", qos);
   touch_publisher_ = this->create_publisher<communication::msg::TouchSensor>(
@@ -46,6 +49,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       joint_timer, std::bind(&MuJoCoMessageHandler::joint_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
       odom_timer, std::bind(&MuJoCoMessageHandler::odom_callback, this)));
+  timers_.emplace_back(this->create_wall_timer(
+      sensor_odom_timer, std::bind(&MuJoCoMessageHandler::sensor_odom_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
       touch_timer, std::bind(&MuJoCoMessageHandler::touch_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
@@ -170,6 +175,48 @@ void MuJoCoMessageHandler::imu_callback() {
       }
     }
     imu_publisher_->publish(message);
+  }
+}
+
+
+void MuJoCoMessageHandler::sensor_odom_callback() {
+  if (sim_->d != nullptr) {
+    auto message = nav_msgs::msg::Odometry();
+    message.header.frame_id = "world";
+    message.header.stamp = rclcpp::Clock().now();
+    message.child_frame_id = odometry_frame;
+    const std::lock_guard<std::mutex> lock(sim_->mtx);
+
+    int body_index = mj_name2id(sim_->m, mjOBJ_BODY,  odometry_frame.c_str());
+    const double* pos = sim_->d->xpos + 3 * body_index;  
+    const double* qpos = sim_->d->xquat + 4 * body_index;
+
+    message.pose.pose.position.x = pos[0];
+    message.pose.pose.position.y = pos[1];
+    message.pose.pose.position.z = pos[2];
+    message.pose.pose.orientation.w = qpos[0];
+    message.pose.pose.orientation.x = qpos[1];
+    message.pose.pose.orientation.y = qpos[2];
+    message.pose.pose.orientation.z = qpos[3];
+
+    for (int i = 0; i < sim_->m->nsensor; i++) {
+      if (sim_->m->sensor_type[i] == mjtSensor::mjSENS_VELOCIMETER) {
+        message.twist.twist.linear.x =
+            sim_->d->sensordata[sim_->m->sensor_adr[i]];
+        message.twist.twist.linear.y =
+            sim_->d->sensordata[sim_->m->sensor_adr[i] + 1];
+        message.twist.twist.linear.z =
+            sim_->d->sensordata[sim_->m->sensor_adr[i] + 2];
+      } else if (sim_->m->sensor_type[i] == mjtSensor::mjSENS_GYRO) {
+        message.twist.twist.angular.x =
+            sim_->d->sensordata[sim_->m->sensor_adr[i]];
+        message.twist.twist.angular.y =
+            sim_->d->sensordata[sim_->m->sensor_adr[i] + 1];
+        message.twist.twist.angular.z =
+            sim_->d->sensordata[sim_->m->sensor_adr[i] + 2];
+      }
+    }
+    sensor_odom_publisher_->publish(message);
   }
 }
 
@@ -334,59 +381,59 @@ void MuJoCoMessageHandler::contacts_callback() {
     const std::lock_guard<std::mutex> lock(sim_->mtx);
     mjData* data = sim_->d;
     mjModel* model = sim_->m;
-    message.contacts.resize(1);
+    message.contacts.resize(data->ncon);
 
     for (int i = 0; i < data->ncon; i++) {
         const mjContact& contact = data->contact[i];
         
         if (contact.efc_address >= 0) {
 
-            message.contacts[0].header.stamp = now;
-            message.contacts[0].header.frame_id = "world";
-            message.contacts[0].position.x = contact.pos[0];
-            message.contacts[0].position.y = contact.pos[1];
-            message.contacts[0].position.z = contact.pos[2];
+            message.contacts[i].header.stamp = now;
+            message.contacts[i].header.frame_id = "world";
+            message.contacts[i].position.x = contact.pos[0];
+            message.contacts[i].position.y = contact.pos[1];
+            message.contacts[i].position.z = contact.pos[2];
 
-            message.contacts[0].normal.x = contact.frame[0];
-            message.contacts[0].normal.y = contact.frame[1];
-            message.contacts[0].normal.z = contact.frame[2];
+            message.contacts[i].normal.x = contact.frame[0];
+            message.contacts[i].normal.y = contact.frame[1];
+            message.contacts[i].normal.z = contact.frame[2];
 
 
-            message.contacts[0].tangent1.x = contact.frame[3];
-            message.contacts[0].tangent1.y = contact.frame[4];
-            message.contacts[0].tangent1.z = contact.frame[5];
+            message.contacts[i].tangent1.x = contact.frame[3];
+            message.contacts[i].tangent1.y = contact.frame[4];
+            message.contacts[i].tangent1.z = contact.frame[5];
 
-            message.contacts[0].tangent2.x = contact.frame[6];
-            message.contacts[0].tangent2.y = contact.frame[7];
-            message.contacts[0].tangent2.z = contact.frame[8];
+            message.contacts[i].tangent2.x = contact.frame[6];
+            message.contacts[i].tangent2.y = contact.frame[7];
+            message.contacts[i].tangent2.z = contact.frame[8];
 
             // Solver parameters
-            message.contacts[0].solref[0] = contact.solref[0];
-            message.contacts[0].solref[1] = contact.solref[1];
-            message.contacts[0].solimp[0] = contact.solimp[0];
-            message.contacts[0].solimp[1] = contact.solimp[1];
+            message.contacts[i].solref[0] = contact.solref[0];
+            message.contacts[i].solref[1] = contact.solref[1];
+            message.contacts[i].solimp[0] = contact.solimp[0];
+            message.contacts[i].solimp[1] = contact.solimp[1];
 
-            message.contacts[0].distance = contact.dist;
+            message.contacts[i].distance = contact.dist;
 
             // Object IDs
-            message.contacts[0].object1_id = contact.geom1;
-            message.contacts[0].object2_id = contact.geom2;
+            message.contacts[i].object1_id = contact.geom1;
+            message.contacts[i].object2_id = contact.geom2;
 
             // Contact dimension, exclude flag, and solver address
-            message.contacts[0].contact_dim = contact.dim;
-            message.contacts[0].exclude_flag = contact.exclude;
-            message.contacts[0].efc_address = contact.efc_address;
+            message.contacts[i].contact_dim = contact.dim;
+            message.contacts[i].exclude_flag = contact.exclude;
+            message.contacts[i].efc_address = contact.efc_address;
 
-            message.contacts[0].contact_force.force.x = data->efc_force[contact.efc_address + 2];
-            message.contacts[0].contact_force.force.y = data->efc_force[contact.efc_address + 1];
-            message.contacts[0].contact_force.force.z = data->efc_force[contact.efc_address];
+            message.contacts[i].contact_force.force.x = data->efc_force[contact.efc_address + 2];
+            message.contacts[i].contact_force.force.y = data->efc_force[contact.efc_address + 1];
+            message.contacts[i].contact_force.force.z = data->efc_force[contact.efc_address];
 
-            message.contacts[0].contact_force.torque.x = data->efc_force[contact.efc_address + 5];
-            message.contacts[0].contact_force.torque.y = data->efc_force[contact.efc_address + 4];
-            message.contacts[0].contact_force.torque.z = data->efc_force[contact.efc_address + 3];
+            message.contacts[i].contact_force.torque.x = data->efc_force[contact.efc_address + 5];
+            message.contacts[i].contact_force.torque.y = data->efc_force[contact.efc_address + 4];
+            message.contacts[i].contact_force.torque.z = data->efc_force[contact.efc_address + 3];
 
             for (int j = 0; j < 5; ++j) {
-                message.contacts[0].friction[j] = contact.friction[j];
+                message.contacts[i].friction[j] = contact.friction[j];
             }
 
             const char* geom1_name = (model->name_geomadr[contact.geom1] >= 0 && *(model->names + model->name_geomadr[contact.geom1]) != '\0') 
@@ -398,8 +445,8 @@ void MuJoCoMessageHandler::contacts_callback() {
                             : "Unnamed";
 
 
-            message.contacts[0].object1_name = geom1_name;
-            message.contacts[0].object2_name = geom2_name;
+            message.contacts[i].object1_name = geom1_name;
+            message.contacts[i].object2_name = geom2_name;
        
         } else {
             RCLCPP_WARN_STREAM(this->get_logger(), "Contact " << i << " not included in constraints.\n");

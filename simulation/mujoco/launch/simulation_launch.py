@@ -20,9 +20,17 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {"simulation/model_file": xml_file},
+                    {"imu_timer":           2.5},
+                    {"joint_timer":         2.},
+                    {"odom_timer":          20.},
+                    {"sensor_odom_timer":   2.},
+                    {"touch_timer":         2.},
+                    {"img_timer":           20.},
+                    {"contacts_timer":      2.},
                 ],
                 emulate_tty=True,
                 arguments=[("__log_level:=debug")],
+                
             ),
         ]
     )
