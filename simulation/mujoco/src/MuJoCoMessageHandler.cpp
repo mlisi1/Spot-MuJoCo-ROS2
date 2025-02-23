@@ -15,6 +15,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       std::bind(&MuJoCoMessageHandler::reset_callback, this,
                 std::placeholders::_1, std::placeholders::_2));
 
+  tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
   auto imu_timer =              1ms * this->declare_parameter<double>("imu_timer", 2.5);  // ms
   auto joint_timer =            1ms * this->declare_parameter<double>("joint_timer", 1.);  // ms
   auto odom_timer =             1ms * this->declare_parameter<double>("odom_timer", 20.);  // ms
@@ -22,6 +24,7 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
   auto touch_timer =            1ms * this->declare_parameter<double>("touch_timer", 2.);  // ms
   auto img_timer =              1ms * this->declare_parameter<double>("img_timer", 20.);  // ms
   auto contacts_timer =         1ms * this->declare_parameter<double>("contacts_timer", 1.);  // ms
+  auto tf_timer =               1ms * this->declare_parameter<double>("tf_timer", 1.);  // ms
 
   odometry_frame = this->declare_parameter<std::string>("odometry_frame", "base");
 
@@ -59,6 +62,9 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       contacts_timer, std::bind(&MuJoCoMessageHandler::contacts_callback, this)));
   timers_.emplace_back(this->create_wall_timer(
       100ms, std::bind(&MuJoCoMessageHandler::drop_old_message, this)));
+  timers_.emplace_back(this->create_wall_timer(
+      tf_timer, std::bind(&MuJoCoMessageHandler::transform_callback, this)));
+
   /* timers_.emplace_back(this->create_wall_timer(
       4s, std::bind(&MuJoCoMessageHandler::throw_box, this)));
  */
@@ -88,6 +94,7 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
                                .get<std::string>();
   mju::strcpy_arr(sim_->filename, model_file.c_str());
   sim_->uiloadrequest.fetch_add(1);
+
 }
 
 MuJoCoMessageHandler::~MuJoCoMessageHandler() {
@@ -367,6 +374,39 @@ void MuJoCoMessageHandler::trajectory_cmd_callback(
         // }
 
     }
+  }
+}
+
+
+
+void MuJoCoMessageHandler::transform_callback() {
+  if (sim_->d != nullptr) {
+
+    int frame_id = mj_name2id(sim_->m, mjOBJ_BODY,  odometry_frame.c_str());
+
+    if (frame_id == -1) {
+        RCLCPP_ERROR(this->get_logger(), "Frame '%s' not found in MuJoCo model!", odometry_frame.c_str());
+        return;
+    }
+
+    mjData* data = sim_->d;
+
+    // Get position and quaternion (MuJoCo stores quaternions as [w, x, y, z])
+    geometry_msgs::msg::TransformStamped tf_msg;
+    tf_msg.header.stamp = this->get_clock()->now();
+    tf_msg.header.frame_id = "world";  // World frame
+    tf_msg.child_frame_id = odometry_frame;
+
+    tf_msg.transform.translation.x = data->xpos[3 * frame_id];
+    tf_msg.transform.translation.y = data->xpos[3 * frame_id + 1];
+    tf_msg.transform.translation.z = data->xpos[3 * frame_id + 2];
+
+    tf_msg.transform.rotation.w = data->xquat[4 * frame_id];
+    tf_msg.transform.rotation.x = data->xquat[4 * frame_id + 1];
+    tf_msg.transform.rotation.y = data->xquat[4 * frame_id + 2];
+    tf_msg.transform.rotation.z = data->xquat[4 * frame_id + 3];
+
+    tf_broadcaster_->sendTransform(tf_msg);
   }
 }
 

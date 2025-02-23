@@ -16,6 +16,9 @@
 #include "communication/msg/touch_sensor.hpp"
 #include "communication/srv/simulation_reset.hpp"
 
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+
 #include "array_safety.h"
 #include "simulate.h"
 
@@ -57,6 +60,8 @@ private:
 
   void touch_callback();
 
+  void transform_callback();
+
   void joint_callback();
 
   void img_callback();
@@ -93,6 +98,8 @@ private:
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr
       trajectory_cmd_subscription_;
   rclcpp::Service<communication::srv::SimulationReset>::SharedPtr reset_service_;
+
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   std::shared_ptr<rclcpp::ParameterEventHandler> param_subscriber_;
 
