@@ -464,7 +464,7 @@ void MuJoCoMessageHandler::contacts_callback() {
             message.contacts[i].exclude_flag = contact.exclude;
             message.contacts[i].efc_address = contact.efc_address;
 
-            message.contacts[i].contact_force.force.x = data->efc_force[contact.efc_address + 2];
+            message.contacts[i].contact_force.force.x = -data->efc_force[contact.efc_address + 2];
             message.contacts[i].contact_force.force.y = data->efc_force[contact.efc_address + 1];
             message.contacts[i].contact_force.force.z = data->efc_force[contact.efc_address];
 
