@@ -18,7 +18,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {"simulation/model_file": xml_file},
-                    {"imu_timer":           5},
+                    {"imu_timer":           5.},
                     {"joint_timer":         5.},
                     {"odom_timer":          5.},
                     {"sensor_odom_timer":   5.},
