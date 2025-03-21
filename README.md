@@ -1,18 +1,19 @@
-# Spot MuJoCo ROS2
+# MuJoCo ROS2
 
 <div align="center">
-    <img src="./results.png">
+    <img src="./results.png" height="550">
 </div>
 
 ## Introduction
 
-This package is developed with [ROS2](https://docs.ros.org/en/humble/index.html) based on [spot-sdk](https://github.com/boston-dynamics/spot-sdk). The original [urdf](https://github.com/boston-dynamics/spot-sdk/tree/master/files) has no inertia and mass information, so we generate this information based on its geometric shape.
+This package is developed with [ROS2](https://docs.ros.org/en/humble/index.html) as a fork of [Spot MuJoCo ROS2](https://github.com/MindSpaceInc/Spot-MuJoCo-ROS2) with the aim to be a general ROS2 MuJoCo wrapper.
 
-The files include:
-
-1. The XML file `(description/model/xml/spot_mini/spot_mini.xml)` of [Spot Mini](https://www.bostondynamics.com/products/spot) for the simulation in [MuJoCo](https://mujoco.org/).
-2. A class named `MuJoCoMessageHandler` is also provided, which publishes the robot joint state and imu message. The `odom` message is just the real pose of the robot in simulation. More details can be found in the cpp file `src/simulation/mujoco/src/MuJoCoMessageHandler.cpp`.
-3. ROS2 ([version](https://docs.ros.org/en/humble/index.html)) is needed to run this package.
+Comparing to the original repo, this fork includes:
++ feet contact callback
++ JointTrajectory callback to control the robot
++ odometry callback
++ parameters to time the callbacks
++ ANYmal C XML description
 
 ## Installation
 
@@ -23,7 +24,8 @@ cd ~/ & mkdir -p your_workspace/src
 
 ```
 # Clone this package to your_workspace/src
-cd ~/your_workspace/src & git clone https://github.com/MindSpaceInc/Spot-MuJoCo-ROS2.git
+cd ~/your_workspace/src & git clone git@github.com:mlisi1/Spot-MuJoCo-ROS2.git
+cd ..
 ```
 
 ```
@@ -33,22 +35,30 @@ colcon build --symlink-install
 
 ```
 # Setup env
-source ../install/setup.bash
+source install/setup.bash
 ```
 
 ```
 # Run simulation 
-ros2 launch mujoco simulation_launch.py
+ros2 launch mujoco anymal_simulation.launch.py
 ```
-
-Now your can open a new terminal and use command `ros2 topic list` to see the below topics
+## Published topics
+Using the command `ros2 topic list` the following topics can be seen during simulation:
 ```
-/parameter_events
-/rosout
+# already present
 /simulation/actuators_cmds
 /simulation/imu_data
 /simulation/joint_states
 /simulation/odom
+/simulation/rgb_image
+/simulation/depth_image
+/simulation/imu_data
+/simulation/touch_sensor
+
+# new topics
+/simulation/joint_trajectory        # used to control the robot
+/simulation/contacts                # publishes all contacts
+/simulation/sensor_odom             # publishes Odomtry message regarding a specific frame
 
 ```
-
+It is worth noting that it is useful to give names to the interested geometries for collision. The simulation will publish every collision happening; as usually geometries do not have a name, they will show as Unnamed, so indistinguishible.
