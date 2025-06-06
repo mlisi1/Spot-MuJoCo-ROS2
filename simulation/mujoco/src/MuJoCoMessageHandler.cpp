@@ -17,14 +17,15 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-  auto imu_timer =              1ms * this->declare_parameter<double>("imu_timer", 2.5);  // ms
-  auto joint_timer =            1ms * this->declare_parameter<double>("joint_timer", 1.);  // ms
-  auto odom_timer =             1ms * this->declare_parameter<double>("odom_timer", 20.);  // ms
-  auto sensor_odom_timer =      1ms * this->declare_parameter<double>("sensor_odom_timer", 1.);  // ms
-  auto touch_timer =            1ms * this->declare_parameter<double>("touch_timer", 2.);  // ms
-  auto img_timer =              1ms * this->declare_parameter<double>("img_timer", 20.);  // ms
-  auto contacts_timer =         1ms * this->declare_parameter<double>("contacts_timer", 1.);  // ms
-  auto tf_timer =               1ms * this->declare_parameter<double>("tf_timer", 1.);  // ms
+  auto imu_timer =              1ms * this->declare_parameter<double>("imu_timer",          2.5);  // ms
+  auto joint_timer =            1ms * this->declare_parameter<double>("joint_timer",        1.);  // ms
+  auto odom_timer =             1ms * this->declare_parameter<double>("odom_timer",         20.);  // ms
+  auto sensor_odom_timer =      1ms * this->declare_parameter<double>("sensor_odom_timer",  1.);  // ms
+  auto touch_timer =            1ms * this->declare_parameter<double>("touch_timer",        2.);  // ms
+  auto img_timer =              1ms * this->declare_parameter<double>("img_timer",          20.);  // ms
+  auto contacts_timer =         1ms * this->declare_parameter<double>("contacts_timer",     1.);  // ms
+  auto tf_timer =               1ms * this->declare_parameter<double>("tf_timer",           1.);  // ms
+  auto base_wrench_timer =      1ms * this->declare_parameter<double>("base_wrench_timer",  2.5);  // ms
 
   odometry_frame = this->declare_parameter<std::string>("odometry_frame", "base");
 
@@ -39,6 +40,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       name_prefix + "sensor_odom", qos);
   contacts_publisher_ = this->create_publisher<mujoco_msgs::msg::MujocoContacts>(
       name_prefix + "contacts", qos);
+  base_wrench_publisher_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(
+      name_prefix + "base_wrench", qos);
   touch_publisher_ = this->create_publisher<communication::msg::TouchSensor>(
       name_prefix + "touch_sensor", qos);
   depth_img_publisher_ptr_ = this->create_publisher<sensor_msgs::msg::Image>(
@@ -64,6 +67,8 @@ MuJoCoMessageHandler::MuJoCoMessageHandler(mj::Simulate *sim)
       100ms, std::bind(&MuJoCoMessageHandler::drop_old_message, this)));
   timers_.emplace_back(this->create_wall_timer(
       tf_timer, std::bind(&MuJoCoMessageHandler::transform_callback, this)));
+  timers_.emplace_back(this->create_wall_timer(
+      base_wrench_timer, std::bind(&MuJoCoMessageHandler::base_wrench_callback, this)));
 
   /* timers_.emplace_back(this->create_wall_timer(
       4s, std::bind(&MuJoCoMessageHandler::throw_box, this)));
@@ -182,6 +187,29 @@ void MuJoCoMessageHandler::imu_callback() {
       }
     }
     imu_publisher_->publish(message);
+  }
+}
+
+
+void MuJoCoMessageHandler::base_wrench_callback() {
+  if (sim_->d != nullptr) {
+    auto message = geometry_msgs::msg::WrenchStamped();
+    message.header.frame_id = odometry_frame;
+    message.header.stamp = rclcpp::Clock().now();
+
+    for (int i = 0; i < sim_->m->nsensor; i++) {
+      if (sim_->m->sensor_type[i] == mjtSensor::mjSENS_FORCE) {
+        message.wrench.force.x = -sim_->d->sensordata[sim_->m->sensor_adr[i]];
+        message.wrench.force.y = -sim_->d->sensordata[sim_->m->sensor_adr[i] + 1];
+        message.wrench.force.z = -sim_->d->sensordata[sim_->m->sensor_adr[i] + 2];
+      }
+      if (sim_->m->sensor_type[i] == mjtSensor::mjSENS_TORQUE) {
+        message.wrench.torque.x = -sim_->d->sensordata[sim_->m->sensor_adr[i]];
+        message.wrench.torque.y = -sim_->d->sensordata[sim_->m->sensor_adr[i] + 1];
+        message.wrench.torque.z = -sim_->d->sensordata[sim_->m->sensor_adr[i] + 2];
+      }      
+    }
+    base_wrench_publisher_->publish(message);
   }
 }
 

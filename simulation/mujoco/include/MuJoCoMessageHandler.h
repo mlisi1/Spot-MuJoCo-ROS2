@@ -18,6 +18,7 @@
 
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
 
 #include "array_safety.h"
 #include "simulate.h"
@@ -68,6 +69,8 @@ private:
 
   void contacts_callback();
 
+  void base_wrench_callback();
+
   void actuator_cmd_callback(
       const communication::msg::ActuatorCmds::SharedPtr msg) const;
 
@@ -89,6 +92,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr sensor_odom_publisher_;
   rclcpp::Publisher<mujoco_msgs::msg::MujocoContacts>::SharedPtr contacts_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr base_wrench_publisher_;
   rclcpp::Publisher<communication::msg::TouchSensor>::SharedPtr touch_publisher_;
   Publisher<sensor_msgs::msg::Image>::SharedPtr depth_img_publisher_ptr_;
   Publisher<sensor_msgs::msg::Image>::SharedPtr rgb_img_publisher_ptr_;

@@ -25,6 +25,7 @@ def generate_launch_description():
                     {"touch_timer":         5.},
                     {"img_timer":           5.},
                     {"contacts_timer":      5.},
+                    {"base_wrench_timer":   5.},
                 ],
                 emulate_tty=True,
                 arguments=[("__log_level:=debug")],

@@ -105,6 +105,12 @@
     <body name="base" pos="0 0 0.52" quat="0 0 0 1" childclass="anymal_c">
       <site name="velocimeter_site" pos="0 0 0" size="0.05" />
       <site name="gyro_site" pos="0 0 0" size="0.05" />
+      <body name="dummy_body" pos="0 0 0.05">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="0 0 0" />
+          <geom type="box" pos="0 0 0" size="0.55 0.2 0.15" rgba="0 1 0 1"/>
+          <site name="force_site" pos="0 0 0" size="0.05" />
+          <site name="torque_site" pos="0 0 0" size="0.05" />
+      </body>
       <freejoint/>
       <inertial mass="26.3732" pos="-0.0177939 -0.00017817  0.00850434" diaginertia="0.216712 1.78516 1.8337"/>
       <geom mesh="base_0" material="green" class="visual"/>
@@ -288,6 +294,10 @@
     <exclude body1="base" body2="RF_THIGH"/>
     <exclude body1="base" body2="LH_THIGH"/>
     <exclude body1="base" body2="RH_THIGH"/>
+    <exclude body1="dummy_body" body2="LF_THIGH"/>
+    <exclude body1="dummy_body" body2="RF_THIGH"/>
+    <exclude body1="dummy_body" body2="LH_THIGH"/>
+    <exclude body1="dummy_body" body2="RH_THIGH"/>
   </contact>
 
   <actuator>
@@ -308,6 +318,8 @@
   <sensor>
       <velocimeter name="velocimeter" site="velocimeter_site" />
       <gyro name="gyro" site="gyro_site" />
+      <force name="force" site="force_site" />
+      <torque name="torque" site="torque_site" />
       <framequat objname="base" objtype="body" name="framequat"/>
   </sensor>
 
