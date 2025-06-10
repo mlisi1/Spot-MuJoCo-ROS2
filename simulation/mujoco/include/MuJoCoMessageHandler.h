@@ -17,6 +17,7 @@
 #include "communication/srv/simulation_reset.hpp"
 
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp> 
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
 
@@ -83,6 +84,10 @@ private:
 
   void throw_box();
 
+  geometry_msgs::msg::WrenchStamped transformWrenchToWorld(
+    const geometry_msgs::msg::WrenchStamped &wrench_body,
+    const geometry_msgs::msg::TransformStamped &tf_world_to_body);
+
   mj::Simulate *sim_;
   std::string name_prefix, model_param_name;
   std::vector<rclcpp::TimerBase::SharedPtr> timers_;
@@ -114,6 +119,8 @@ private:
   std::thread spin_thread;
 
   std::string odometry_frame;
+
+  geometry_msgs::msg::TransformStamped tf_msg;
 
 };
 

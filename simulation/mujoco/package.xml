@@ -21,6 +21,7 @@
   <depend>sensor_msgs</depend>
   <depend>mujoco_msgs</depend>
   <depend>trajectory_msgs</depend>
+  <depend>tf2_geometry_msgs</depend>
   <depend>cv_bridge</depend>
   <exec_depend>ros2launch</exec_depend>
 

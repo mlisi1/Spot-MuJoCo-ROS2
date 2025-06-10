@@ -209,8 +209,48 @@ void MuJoCoMessageHandler::base_wrench_callback() {
         message.wrench.torque.z = -sim_->d->sensordata[sim_->m->sensor_adr[i] + 2];
       }      
     }
+
+    message = transformWrenchToWorld(message, tf_msg);
+
     base_wrench_publisher_->publish(message);
   }
+}
+
+
+
+geometry_msgs::msg::WrenchStamped MuJoCoMessageHandler::transformWrenchToWorld(
+    const geometry_msgs::msg::WrenchStamped &wrench_body,
+    const geometry_msgs::msg::TransformStamped &tf_world_to_body)
+{
+    // Extract rotation from transform
+    tf2::Quaternion q_body_to_world;
+    tf2::fromMsg(tf_world_to_body.transform.rotation, q_body_to_world);
+
+    // Inverse rotation: body → world
+    tf2::Quaternion q_world_to_body = q_body_to_world.inverse();
+
+    tf2::Vector3 force_body(
+        wrench_body.wrench.force.x,
+        wrench_body.wrench.force.y,
+        wrench_body.wrench.force.z);
+
+    tf2::Vector3 torque_body(
+        wrench_body.wrench.torque.x,
+        wrench_body.wrench.torque.y,
+        wrench_body.wrench.torque.z);
+
+    // Rotate vectors to world frame
+    tf2::Vector3 force_world = tf2::quatRotate(q_body_to_world, force_body);
+    tf2::Vector3 torque_world = tf2::quatRotate(q_body_to_world, torque_body);
+
+    geometry_msgs::msg::WrenchStamped wrench_world;
+
+    // Fill output wrench
+    wrench_world = wrench_body;  // Copy header info
+    wrench_world.wrench.force = tf2::toMsg(force_world);
+    wrench_world.wrench.torque = tf2::toMsg(torque_world);
+    wrench_world.header.frame_id = "world";
+    return wrench_world;
 }
 
 
@@ -420,7 +460,6 @@ void MuJoCoMessageHandler::transform_callback() {
     mjData* data = sim_->d;
 
     // Get position and quaternion (MuJoCo stores quaternions as [w, x, y, z])
-    geometry_msgs::msg::TransformStamped tf_msg;
     tf_msg.header.stamp = this->get_clock()->now();
     tf_msg.header.frame_id = "world";  // World frame
     tf_msg.child_frame_id = odometry_frame;
