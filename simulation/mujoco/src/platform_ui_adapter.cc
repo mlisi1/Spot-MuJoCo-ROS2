@@ -21,7 +21,7 @@ PlatformUIAdapter::PlatformUIAdapter() {
   mjr_defaultContext(&con_);
 }
 
-PlatformUIAdapter::~PlatformUIAdapter() {
+void PlatformUIAdapter::FreeMjrContext() {
   mjr_freeContext(&con_);
 }
 
@@ -32,6 +32,10 @@ bool PlatformUIAdapter::RefreshMjrContext(const mjModel* m, int fontscale) {
     last_fontscale_ = fontscale;
     return true;
   }
+  return false;
+}
+
+bool PlatformUIAdapter::EnsureContextSize() {
   return false;
 }
 
@@ -72,6 +76,8 @@ void PlatformUIAdapter::OnKey(int key, int scancode, int act) {
   if (event_callback_) {
     event_callback_(&state_);
   }
+
+  last_key_ = mj_key;
 }
 
 void PlatformUIAdapter::OnMouseButton(int button, int act)  {

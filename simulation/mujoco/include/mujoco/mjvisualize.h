@@ -15,14 +15,16 @@
 #ifndef MUJOCO_MJVISUALIZE_H_
 #define MUJOCO_MJVISUALIZE_H_
 
-#include <mujoco/mjtnum.h>
+#include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjtnum.h>
+
 
 #define mjNGROUP        6         // number of geom, site, joint, skin groups with visflags
 #define mjMAXLIGHT      100       // maximum number of lights in a scene
 #define mjMAXOVERLAY    500       // maximum number of characters in overlay text
 #define mjMAXLINE       100       // maximum number of lines per plot
-#define mjMAXLINEPNT    1000      // maximum number points per line
+#define mjMAXLINEPNT    1001      // maximum number points per line
 #define mjMAXPLANEGRID  200       // maximum number of grid divisions for plane
 
 
@@ -43,7 +45,8 @@ typedef enum mjtMouse_ {          // mouse interaction mode
   mjMOUSE_MOVE_V,                 // move, vertical plane
   mjMOUSE_MOVE_H,                 // move, horizontal plane
   mjMOUSE_ZOOM,                   // zoom
-  mjMOUSE_SELECT                  // selection
+  mjMOUSE_MOVE_V_REL,             // move, vertical plane, relative to target
+  mjMOUSE_MOVE_H_REL,             // move, horizontal plane, relative to target
 } mjtMouse;
 
 
@@ -72,10 +75,13 @@ typedef enum mjtLabel_ {          // object labeling
   mjLABEL_TENDON,                 // tendon labels
   mjLABEL_ACTUATOR,               // actuator labels
   mjLABEL_CONSTRAINT,             // constraint labels
+  mjLABEL_FLEX,                   // flex labels
   mjLABEL_SKIN,                   // skin labels
   mjLABEL_SELECTION,              // selected object
   mjLABEL_SELPNT,                 // coordinates of selection point
+  mjLABEL_CONTACTPOINT,           // contact information
   mjLABEL_CONTACTFORCE,           // magnitude of contact force
+  mjLABEL_ISLAND,                 // id of island
 
   mjNLABEL                        // number of label types
 } mjtLabel;
@@ -111,14 +117,22 @@ typedef enum mjtVisFlag_ {        // flags enabling model element visualization
   mjVIS_PERTFORCE,                // perturbation force
   mjVIS_PERTOBJ,                  // perturbation object
   mjVIS_CONTACTPOINT,             // contact points
+  mjVIS_ISLAND,                   // constraint islands
   mjVIS_CONTACTFORCE,             // contact force
-  mjVIS_CONTACTSPLIT,             // split contact force into normal and tanget
+  mjVIS_CONTACTSPLIT,             // split contact force into normal and tangent
   mjVIS_TRANSPARENT,              // make dynamic geoms more transparent
   mjVIS_AUTOCONNECT,              // auto connect joints and body coms
   mjVIS_COM,                      // center of mass
   mjVIS_SELECT,                   // selection point
   mjVIS_STATIC,                   // static bodies
   mjVIS_SKIN,                     // skin
+  mjVIS_FLEXVERT,                 // flex vertices
+  mjVIS_FLEXEDGE,                 // flex edges
+  mjVIS_FLEXFACE,                 // flex element faces
+  mjVIS_FLEXSKIN,                 // flex smooth skin (disables the rest)
+  mjVIS_BODYBVH,                  // body bounding volume hierarchy
+  mjVIS_MESHBVH,                  // mesh bounding volume hierarchy
+  mjVIS_SDFITER,                  // iterations of SDF gradient descent
 
   mjNVISFLAG                      // number of visualization flags
 } mjtVisFlag;
@@ -132,6 +146,7 @@ typedef enum mjtRndFlag_ {        // flags enabling rendering effects
   mjRND_SKYBOX,                   // skybox
   mjRND_FOG,                      // fog
   mjRND_HAZE,                     // haze
+  mjRND_DEPTH,                    // depth
   mjRND_SEGMENT,                  // segmentation with random color
   mjRND_IDCOLOR,                  // segmentation with segid+1 color
   mjRND_CULL_FACE,                // cull backward faces
@@ -151,13 +166,15 @@ typedef enum mjtStereo_ {         // type of stereo rendering
 
 struct mjvPerturb_ {              // object selection and perturbation
   int      select;                // selected body id; non-positive: none
+  int      flexselect;            // selected flex id; negative: none
   int      skinselect;            // selected skin id; negative: none
   int      active;                // perturbation bitmask (mjtPertBit)
   int      active2;               // secondary perturbation bitmask (mjtPertBit)
   mjtNum   refpos[3];             // reference position for selected object
   mjtNum   refquat[4];            // reference orientation for selected object
-  mjtNum   reflocalpos[3];        // reference selection point in object coordinates
+  mjtNum   refselpos[3];          // reference position for selection point
   mjtNum   localpos[3];           // selection point in object coordinates
+  mjtNum   localmass;             // spatial inertia at selection point
   mjtNum   scale;                 // relative mouse motion-to-space scaling (set by initPerturb)
 };
 typedef struct mjvPerturb_ mjvPerturb;
@@ -176,6 +193,9 @@ struct mjvCamera_ {               // abstract camera
   mjtNum   distance;              // distance to lookat point or tracked body
   mjtNum   azimuth;               // camera azimuth (deg)
   mjtNum   elevation;             // camera elevation (deg)
+
+  // orthographic / perspective
+  int      orthographic;          // 0: perspective; 1: orthographic
 };
 typedef struct mjvCamera_ mjvCamera;
 
@@ -190,10 +210,14 @@ struct mjvGLCamera_ {             // OpenGL camera
 
   // camera projection
   float    frustum_center;        // hor. center (left,right set to match aspect)
+  float    frustum_width;         // width (not used for rendering)
   float    frustum_bottom;        // bottom
   float    frustum_top;           // top
   float    frustum_near;          // near
   float    frustum_far;           // far
+
+  // orthographic / perspective
+  int      orthographic;          // 0: perspective; 1: orthographic
 };
 typedef struct mjvGLCamera_ mjvGLCamera;
 
@@ -203,25 +227,26 @@ typedef struct mjvGLCamera_ mjvGLCamera;
 struct mjvGeom_ {                 // abstract geom
   // type info
   int      type;                  // geom type (mjtGeom)
-  int      dataid;                // mesh, hfield or plane id; -1: none
+  int      dataid;                // mesh, hfield or plane id; -1: none; mesh: 2*id or 2*id+1 (hull)
   int      objtype;               // mujoco object type; mjOBJ_UNKNOWN for decor
   int      objid;                 // mujoco object id; -1 for decor
   int      category;              // visual category
-  int      texid;                 // texture id; -1: no texture
-  int      texuniform;            // uniform cube mapping
-  int      texcoord;              // mesh geom has texture coordinates
+  int      matid;                 // material id; -1: no textured material
+  int      texcoord;              // mesh or flex geom has texture coordinates
   int      segid;                 // segmentation id; -1: not shown
 
-  // OpenGL info
-  float    texrepeat[2];          // texture repetition for 2D mapping
+  // spatial transform
   float    size[3];               // size parameters
   float    pos[3];                // Cartesian position
   float    mat[9];                // Cartesian orientation
+
+  // material properties
   float    rgba[4];               // color and transparency
   float    emission;              // emission coef
   float    specular;              // specular coef
   float    shininess;             // shininess coef
   float    reflectance;           // reflectance coef
+
   char     label[100];            // text label
 
   // transparency rendering (set internally)
@@ -235,8 +260,11 @@ typedef struct mjvGeom_ mjvGeom;
 //---------------------------------- mjvLight ------------------------------------------------------
 
 struct mjvLight_ {                // OpenGL light
+  int      id;                    // light id, -1 for headlight
   float    pos[3];                // position rel. to body frame
   float    dir[3];                // direction rel. to body frame
+  int      type;                  // type (mjtLightType)
+  int      texid;                 // texture id for image lights
   float    attenuation[3];        // OpenGL attenuation (quadratic model)
   float    cutoff;                // OpenGL cutoff
   float    exponent;              // OpenGL exponent
@@ -244,8 +272,10 @@ struct mjvLight_ {                // OpenGL light
   float    diffuse[3];            // diffuse rgb (alpha=1)
   float    specular[3];           // specular rgb (alpha=1)
   mjtByte  headlight;             // headlight
-  mjtByte  directional;           // directional light
   mjtByte  castshadow;            // does light cast shadows
+  float    bulbradius;            // bulb radius for soft shadows
+  float    intensity;             // intensity, in candelas
+  float    range;                 // range of effectiveness
 };
 typedef struct mjvLight_ mjvLight;
 
@@ -260,8 +290,11 @@ struct mjvOption_ {                  // abstract visualization options
   mjtByte  jointgroup[mjNGROUP];     // joint visualization by group
   mjtByte  tendongroup[mjNGROUP];    // tendon visualization by group
   mjtByte  actuatorgroup[mjNGROUP];  // actuator visualization by group
+  mjtByte  flexgroup[mjNGROUP];      // flex visualization by group
   mjtByte  skingroup[mjNGROUP];      // skin visualization by group
   mjtByte  flags[mjNVISFLAG];        // visualization flags (indexed by mjtVisFlag)
+  int      bvh_depth;                // depth of the bounding volume hierarchy to be visualized
+  int      flex_layer;               // element layer to be visualized for 3D flex
 };
 typedef struct mjvOption_ mjvOption;
 
@@ -275,13 +308,32 @@ struct mjvScene_ {                // abstract scene passed to OpenGL renderer
   mjvGeom* geoms;                 // buffer for geoms (ngeom)
   int*     geomorder;             // buffer for ordering geoms by distance to camera (ngeom)
 
+  // flex data
+  int      nflex;                 // number of flexes
+  int*     flexedgeadr;           // address of flex edges (nflex)
+  int*     flexedgenum;           // number of edges in flex (nflex)
+  int*     flexvertadr;           // address of flex vertices (nflex)
+  int*     flexvertnum;           // number of vertices in flex (nflex)
+  int*     flexfaceadr;           // address of flex faces (nflex)
+  int*     flexfacenum;           // number of flex faces allocated (nflex)
+  int*     flexfaceused;          // number of flex faces currently in use (nflex)
+  int*     flexedge;              // flex edge data (2*nflexedge)
+  float*   flexvert;              // flex vertices (3*nflexvert)
+  float*   flexface;              // flex faces vertices (9*sum(flexfacenum))
+  float*   flexnormal;            // flex face normals (9*sum(flexfacenum))
+  float*   flextexcoord;          // flex face texture coordinates (6*sum(flexfacenum))
+  mjtByte  flexvertopt;           // copy of mjVIS_FLEXVERT mjvOption flag
+  mjtByte  flexedgeopt;           // copy of mjVIS_FLEXEDGE mjvOption flag
+  mjtByte  flexfaceopt;           // copy of mjVIS_FLEXFACE mjvOption flag
+  mjtByte  flexskinopt;           // copy of mjVIS_FLEXSKIN mjvOption flag
+
   // skin data
   int      nskin;                 // number of skins
   int*     skinfacenum;           // number of faces in skin (nskin)
   int*     skinvertadr;           // address of skin vertices (nskin)
   int*     skinvertnum;           // number of vertices in skin (nskin)
-  float*   skinvert;              // skin vertex data (nskin)
-  float*   skinnormal;            // skin normal data (nskin)
+  float*   skinvert;              // skin vertex data (3*nskinvert)
+  float*   skinnormal;            // skin normal data (3*nskinvert)
 
   // OpenGL lights
   int      nlight;                // number of lights currently in buffer
@@ -303,6 +355,7 @@ struct mjvScene_ {                // abstract scene passed to OpenGL renderer
   // framing
   int      framewidth;            // frame pixel width; 0: disable framing
   float    framergb[3];           // frame color
+  int      status;                // status; 0: ok, 1: geoms exhausted
 };
 typedef struct mjvScene_ mjvScene;
 
@@ -336,7 +389,7 @@ struct mjvFigure_ {               // abstract 2D figure passed to OpenGL rendere
   // text labels
   char    title[1000];            // figure title; subplots separated with 2+ spaces
   char    xlabel[100];            // x-axis label
-  char    linename[mjMAXLINE][100]; // line names for legend
+  char    linename[mjMAXLINE][100];  // line names for legend
 
   // dynamic settings
   int     legendoffset;           // number of lines to offset legend
@@ -347,7 +400,7 @@ struct mjvFigure_ {               // abstract 2D figure passed to OpenGL rendere
 
   // line data
   int     linepnt[mjMAXLINE];     // number of points in line; (0) disable
-  float   linedata[mjMAXLINE][2*mjMAXLINEPNT]; // line data (x,y)
+  float   linedata[mjMAXLINE][2*mjMAXLINEPNT];  // line data (x,y)
 
   // output from renderer
   int     xaxispixel[2];          // range of x-axis in pixels

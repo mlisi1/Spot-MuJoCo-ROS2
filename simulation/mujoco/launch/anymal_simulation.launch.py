@@ -28,7 +28,8 @@ def generate_launch_description():
                     {"base_wrench_timer":   5.},
                 ],
                 emulate_tty=True,
-                arguments=[("__log_level:=debug")],
+                arguments=[(xml_file)],
+                # arguments=[("__log_level:=debug")],
                 
             ),
         ]
