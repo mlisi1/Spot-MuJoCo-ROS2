@@ -23,7 +23,7 @@
       </default>
 
       <default class="affine">
-        <position kp="100" ctrlrange="-6.28 6.28" forcerange="-80 80"/>
+        <position kp="300" kv="6.0" ctrlrange="-6.28 6.28" forcerange="-80 80"/>
       </default>
     </default>
   </default>
